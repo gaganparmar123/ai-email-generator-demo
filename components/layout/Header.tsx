@@ -60,7 +60,7 @@ export function Header() {
         {/* Action Controls */}
         <div className="flex items-center gap-3">
           
-          {/* OpenAI API Key Status Indicator */}
+          {/* Gemini API Key Status Indicator */}
           {apiKeyConfigured === null ? (
             <div className="h-6 w-24 bg-zinc-100 dark:bg-zinc-850 rounded animate-pulse" />
           ) : apiKeyConfigured ? (
@@ -71,7 +71,7 @@ export function Header() {
           ) : (
             <div
               className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 border border-amber-250 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30 cursor-help"
-              title="OPENAI_API_KEY is not set or placeholder in .env.local"
+              title="GEMINI_API_KEY is not set in .env.local"
             >
               <AlertTriangle className="size-3.5 animate-pulse" />
               API Key Missing

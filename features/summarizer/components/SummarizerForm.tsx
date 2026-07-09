@@ -19,15 +19,6 @@ export function SummarizerForm({ onSubmit, isLoading }: SummarizerFormProps) {
   const drafts = useHistoryStore((state) => state.drafts)
   const saveDraft = useHistoryStore((state) => state.saveDraft)
 
-  const defaultValues: SummarizerInput = React.useMemo(() => {
-    return (
-      drafts.summarizer || {
-        text: "",
-        format: "bulletPoints",
-      }
-    )
-  }, [drafts.summarizer])
-
   const {
     register,
     handleSubmit,
@@ -36,19 +27,29 @@ export function SummarizerForm({ onSubmit, isLoading }: SummarizerFormProps) {
     formState: { errors },
   } = useForm<SummarizerInput>({
     resolver: zodResolver(SummarizerInputSchema),
-    defaultValues,
+    defaultValues: drafts.summarizer || {
+      text: "",
+      format: "bulletPoints",
+    },
   })
 
-  // Reset form when drafts update (external restoration)
+  // Restore draft only once on mount
+  const restoredRef = React.useRef(false)
   React.useEffect(() => {
-    if (drafts.summarizer) {
+    if (!restoredRef.current && drafts.summarizer) {
+      restoredRef.current = true
       reset(drafts.summarizer)
     }
-  }, [drafts.summarizer, reset])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave draft
+  // Autosave draft (skip the initial render to avoid a save→restore loop)
   const formValues = watch()
+  const skipSaveRef = React.useRef(true)
   React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
     saveDraft("summarizer", formValues)
   }, [formValues, saveDraft])
 

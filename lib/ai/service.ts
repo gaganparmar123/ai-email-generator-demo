@@ -1,6 +1,5 @@
-import { openai, isApiKeyConfigured } from "./client"
-import { zodResponseFormat } from "openai/helpers/zod"
-import { ZodType } from "zod"
+import { genAI, isApiKeyConfigured } from "./client"
+import { SchemaType } from "@google/generative-ai"
 import { promptBuilder } from "./prompts"
 import {
   GeneratorInput,
@@ -19,65 +18,131 @@ import {
   SubjectLineOutput,
   SubjectLineOutputSchema,
 } from "./schemas"
+import { ZodType } from "zod"
 
 if (typeof window !== "undefined") {
   throw new Error("AI service can only be used on the server side.")
 }
 
-/**
- * Generic helper to run a structured OpenAI completion request
- */
+// ---------------------------------------------------------------------------
+// Gemini model name
+// ---------------------------------------------------------------------------
+const GEMINI_MODEL = "gemini-2.0-flash"
+
+// ---------------------------------------------------------------------------
+// Zod → Gemini response schema converter (handles the shapes used in this app)
+// ---------------------------------------------------------------------------
+function zodToGeminiSchema(schema: ZodType<any>): any {
+  const def = (schema as any)._def
+
+  // ZodObject
+  if (def.typeName === "ZodObject") {
+    const shape = def.shape()
+    const properties: Record<string, any> = {}
+    const required: string[] = []
+    for (const [key, value] of Object.entries(shape)) {
+      properties[key] = zodToGeminiSchema(value as ZodType<any>)
+      required.push(key)
+    }
+    return { type: SchemaType.OBJECT, properties, required }
+  }
+
+  // ZodArray
+  if (def.typeName === "ZodArray") {
+    return { type: SchemaType.ARRAY, items: zodToGeminiSchema(def.type) }
+  }
+
+  // ZodString
+  if (def.typeName === "ZodString") {
+    return { type: SchemaType.STRING }
+  }
+
+  // ZodNumber
+  if (def.typeName === "ZodNumber") {
+    return { type: SchemaType.NUMBER }
+  }
+
+  // ZodEnum
+  if (def.typeName === "ZodEnum") {
+    return { type: SchemaType.STRING, enum: def.values }
+  }
+
+  // ZodOptional — unwrap and mark as nullable
+  if (def.typeName === "ZodOptional") {
+    const inner = zodToGeminiSchema(def.innerType)
+    return { ...inner, nullable: true }
+  }
+
+  // ZodEffects (e.g. .describe()) — recurse into inner type
+  if (def.typeName === "ZodEffects") {
+    return zodToGeminiSchema(def.schema)
+  }
+
+  // ZodBoolean
+  if (def.typeName === "ZodBoolean") {
+    return { type: SchemaType.BOOLEAN }
+  }
+
+  // Fallback
+  return { type: SchemaType.STRING }
+}
+
+// ---------------------------------------------------------------------------
+// Generic helper to run a structured Gemini completion request
+// ---------------------------------------------------------------------------
 async function runStructuredCompletion<T>(
   prompt: string,
   schema: ZodType<T>,
-  schemaName: string,
   systemPrompt: string = "You are a helpful, professional AI email copywriter and editor."
 ): Promise<T> {
   if (!isApiKeyConfigured()) {
     throw new Error(
-      "OpenAI API Key is not configured. Please set the OPENAI_API_KEY environment variable in your .env.local file."
+      "Gemini API Key is not configured. Please set the GEMINI_API_KEY environment variable in your .env.local file."
     )
   }
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // fast, cost-effective, and fully supports Structured Outputs
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
-      ],
-      response_format: zodResponseFormat(schema, schemaName),
-      temperature: 0.7,
+    const model = genAI.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction: systemPrompt,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: zodToGeminiSchema(schema),
+        temperature: 0.7,
+      },
     })
 
-    const content = response.choices[0]?.message.content
-    if (!content) {
+    const result = await model.generateContent(prompt)
+    const text = result.response.text()
+
+    if (!text) {
       throw new Error("AI completed the request but did not return any text content.")
     }
 
-    const parsed = schema.parse(JSON.parse(content))
+    const parsed = schema.parse(JSON.parse(text))
     return parsed
   } catch (error: any) {
-    console.error(`[AI Service Error] [${schemaName}]:`, error)
-    
+    console.error(`[AI Service Error]:`, error)
+
     // Graceful error classification
-    if (error.status === 401) {
-      throw new Error("Unauthorized: The OpenAI API Key provided in .env.local is invalid.")
+    const msg: string = error.message || ""
+    if (msg.includes("API_KEY_INVALID") || msg.includes("401")) {
+      throw new Error("Unauthorized: The Gemini API Key provided in .env.local is invalid.")
     }
-    if (error.status === 429) {
-      throw new Error("Rate Limit: OpenAI API rate limit exceeded. Please wait a moment and try again.")
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+      throw new Error("Rate Limit: Gemini API rate limit exceeded. Please wait a moment and try again.")
     }
-    if (error.status === 500 || error.status === 503) {
-      throw new Error("Service Unavailable: OpenAI services are currently experiencing issues. Please try again later.")
+    if (msg.includes("500") || msg.includes("503") || msg.includes("SERVICE_UNAVAILABLE")) {
+      throw new Error("Service Unavailable: Gemini services are currently experiencing issues. Please try again later.")
     }
-    
-    throw new Error(error.message || "An unexpected error occurred during AI processing.")
+
+    throw new Error(msg || "An unexpected error occurred during AI processing.")
   }
 }
 
-/**
- * AI Email Studio Service Layer
- */
+// ---------------------------------------------------------------------------
+// AI Email Studio Service Layer
+// ---------------------------------------------------------------------------
 export const aiService = {
   /**
    * Generates a new email based on recipient, tone, length, and description prompts.
@@ -87,7 +152,6 @@ export const aiService = {
     return runStructuredCompletion<GeneratorOutput>(
       prompt,
       GeneratorOutputSchema,
-      "email_generator",
       "You are a professional email writing assistant that outputs detailed emails with alternative subject lines."
     )
   },
@@ -100,7 +164,6 @@ export const aiService = {
     return runStructuredCompletion<RewriterOutput>(
       prompt,
       RewriterOutputSchema,
-      "email_rewriter",
       "You are a professional editor that rewrites emails and clearly explains stylistic updates."
     )
   },
@@ -113,7 +176,6 @@ export const aiService = {
     return runStructuredCompletion<GrammarOutput>(
       prompt,
       GrammarOutputSchema,
-      "grammar_fixer",
       "You are an expert editor who corrects all grammar, spelling, and style errors, logging each change."
     )
   },
@@ -126,7 +188,6 @@ export const aiService = {
     return runStructuredCompletion<SummarizerOutput>(
       prompt,
       SummarizerOutputSchema,
-      "email_summarizer",
       "You are an expert executive assistant that extracts core context, key points, and action items."
     )
   },
@@ -139,7 +200,6 @@ export const aiService = {
     return runStructuredCompletion<SubjectLineOutput>(
       prompt,
       SubjectLineOutputSchema,
-      "subject_line_generator",
       "You are a professional copywriter that crafts highly converting and engaging subject lines."
     )
   },

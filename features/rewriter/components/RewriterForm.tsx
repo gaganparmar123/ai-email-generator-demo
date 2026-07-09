@@ -19,17 +19,6 @@ export function RewriterForm({ onSubmit, isLoading }: RewriterFormProps) {
   const drafts = useHistoryStore((state) => state.drafts)
   const saveDraft = useHistoryStore((state) => state.saveDraft)
 
-  const defaultValues: RewriterInput = React.useMemo(() => {
-    return (
-      drafts.rewriter || {
-        originalText: "",
-        tone: "professional",
-        lengthAdjustment: "same",
-        extraInstructions: "",
-      }
-    )
-  }, [drafts.rewriter])
-
   const {
     register,
     handleSubmit,
@@ -38,19 +27,31 @@ export function RewriterForm({ onSubmit, isLoading }: RewriterFormProps) {
     formState: { errors },
   } = useForm<RewriterInput>({
     resolver: zodResolver(RewriterInputSchema),
-    defaultValues,
+    defaultValues: drafts.rewriter || {
+      originalText: "",
+      tone: "professional",
+      lengthAdjustment: "same",
+      extraInstructions: "",
+    },
   })
 
-  // Reset form when drafts update (external restoration)
+  // Restore draft only once on mount
+  const restoredRef = React.useRef(false)
   React.useEffect(() => {
-    if (drafts.rewriter) {
+    if (!restoredRef.current && drafts.rewriter) {
+      restoredRef.current = true
       reset(drafts.rewriter)
     }
-  }, [drafts.rewriter, reset])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave draft
+  // Autosave draft (skip the initial render to avoid a save→restore loop)
   const formValues = watch()
+  const skipSaveRef = React.useRef(true)
   React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
     saveDraft("rewriter", formValues)
   }, [formValues, saveDraft])
 

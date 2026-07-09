@@ -18,14 +18,6 @@ export function GrammarForm({ onSubmit, isLoading }: GrammarFormProps) {
   const drafts = useHistoryStore((state) => state.drafts)
   const saveDraft = useHistoryStore((state) => state.saveDraft)
 
-  const defaultValues: GrammarInput = React.useMemo(() => {
-    return (
-      drafts.grammar || {
-        text: "",
-      }
-    )
-  }, [drafts.grammar])
-
   const {
     register,
     handleSubmit,
@@ -34,19 +26,26 @@ export function GrammarForm({ onSubmit, isLoading }: GrammarFormProps) {
     formState: { errors },
   } = useForm<GrammarInput>({
     resolver: zodResolver(GrammarInputSchema),
-    defaultValues,
+    defaultValues: drafts.grammar || { text: "" },
   })
 
-  // Reset form when drafts update (external restoration)
+  // Restore draft only once on mount
+  const restoredRef = React.useRef(false)
   React.useEffect(() => {
-    if (drafts.grammar) {
+    if (!restoredRef.current && drafts.grammar) {
+      restoredRef.current = true
       reset(drafts.grammar)
     }
-  }, [drafts.grammar, reset])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave draft
+  // Autosave draft (skip the initial render to avoid a save→restore loop)
   const formValues = watch()
+  const skipSaveRef = React.useRef(true)
   React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
     saveDraft("grammar", formValues)
   }, [formValues, saveDraft])
 

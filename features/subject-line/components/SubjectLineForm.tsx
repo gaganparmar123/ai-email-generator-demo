@@ -23,16 +23,6 @@ export function SubjectLineForm({ onSubmit, isLoading }: SubjectLineFormProps) {
   // Keywords local tag input
   const [keywordInput, setKeywordInput] = React.useState("")
 
-  const defaultValues: SubjectLineInput = React.useMemo(() => {
-    return (
-      drafts["subject-line"] || {
-        emailBody: "",
-        keywords: [],
-        count: 5,
-      }
-    )
-  }, [drafts])
-
   const {
     register,
     handleSubmit,
@@ -42,20 +32,31 @@ export function SubjectLineForm({ onSubmit, isLoading }: SubjectLineFormProps) {
     formState: { errors },
   } = useForm<SubjectLineInput>({
     resolver: zodResolver(SubjectLineInputSchema),
-    defaultValues,
+    defaultValues: drafts["subject-line"] || {
+      emailBody: "",
+      keywords: [],
+      count: 5,
+    },
   })
 
-  // Reset form when drafts update (external restoration)
+  // Restore draft only once on mount
+  const restoredRef = React.useRef(false)
   React.useEffect(() => {
     const d = drafts["subject-line"]
-    if (d) {
+    if (!restoredRef.current && d) {
+      restoredRef.current = true
       reset(d)
     }
-  }, [drafts, reset])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave draft
+  // Autosave draft (skip the initial render to avoid a save→restore loop)
   const formValues = watch()
+  const skipSaveRef = React.useRef(true)
   React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
     saveDraft("subject-line", formValues)
   }, [formValues, saveDraft])
 

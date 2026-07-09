@@ -23,42 +23,42 @@ export function GeneratorForm({ onSubmit, isLoading }: GeneratorFormProps) {
   // Tag input local state
   const [tagInput, setTagInput] = React.useState("")
 
-  // Load draft if available
-  const defaultValues: GeneratorInput = React.useMemo(() => {
-    return (
-      drafts.generator || {
-        recipient: "",
-        tone: "professional",
-        length: "medium",
-        prompt: "",
-        keyPoints: [],
-      }
-    )
-  }, [drafts.generator])
-
   const {
     register,
     handleSubmit,
-    control,
     watch,
     setValue,
     reset,
     formState: { errors },
   } = useForm<GeneratorInput>({
     resolver: zodResolver(GeneratorInputSchema),
-    defaultValues,
+    defaultValues: drafts.generator || {
+      recipient: "",
+      tone: "professional",
+      length: "medium",
+      prompt: "",
+      keyPoints: [],
+    },
   })
 
-  // Reset form when drafts (external restoration) update
+  // Restore draft only once on mount — avoids the reset→watch→saveDraft→reset loop
+  const restoredRef = React.useRef(false)
   React.useEffect(() => {
-    if (drafts.generator) {
+    if (!restoredRef.current && drafts.generator) {
+      restoredRef.current = true
       reset(drafts.generator)
     }
-  }, [drafts.generator, reset])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Watch form values and save draft periodically
+  // Watch form values and save as draft
+  // skipSaveRef prevents writing back immediately after a restore
   const formValues = watch()
+  const skipSaveRef = React.useRef(true) // skip the very first render
   React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
     saveDraft("generator", formValues)
   }, [formValues, saveDraft])
 

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AI Email Studio - Write, Rewrite, and Edit Emails with AI",
-  description: "A production-grade AI Email workspace. Generate custom emails, adjust tone, correct spelling & grammar, summarize email threads, and suggest high-converting subject lines using structured OpenAI responses.",
+  description: "A production-grade AI Email workspace. Generate custom emails, adjust tone, correct spelling & grammar, summarize email threads, and suggest high-converting subject lines powered by Gemini AI.",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body suppressHydrationWarning className="min-h-full flex flex-col">{children}</body>
     </html>
   );
 }
